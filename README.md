@@ -1,12 +1,12 @@
 # SAP Auto Logon
 
-面向每天要在多个 SAP 系统之间来回切换的用户：把 SAP GUI 里那棵树变成一排卡片，双击即登录。
+把 SAP GUI 的 Landscape 变成一排卡片，双击直接登录。
 
 ## 简介
 
-SAP GUI 自带的 SAP Logon 把系统藏在树形目录和右键菜单里，登录一次要点开节点、双击系统、填客户端、输用户和密码，换一套系统再来一遍。这个工具直接读 SAP GUI 自己的 `SAPUILandscape.xml`，把里面的快捷方式铺成卡片墙：最近用过的排最前，双击直接拉起 `sapshcut.exe` 登录，密码存在 Windows 凭据管理器里，不用每次重输。它同时能反向写回 Landscape —— 新建、修改、删除快捷方式，结果立刻在 SAP GUI 里可见，写之前自动备份。
+SAP Logon 里登录一次要点开树、选系统、填客户端和密码。这个工具直接读本机的 `SAPUILandscape.xml`，把快捷方式铺成卡片，双击即登录，密码存在 Windows 凭据管理器里；也能反向写回 Landscape 新建、修改、删除快捷方式，写前自动备份。
 
-> 只读你本机的 SAP GUI 配置；写回操作前会自动备份，且只动快捷方式（`Reference`），不碰基础系统。
+> 只读本机的 SAP GUI 配置；写回只动快捷方式（`Reference`），不碰基础系统。
 
 ## 下载
 
@@ -84,7 +84,6 @@ locales/ui.yml           中英文案
 installer/               NSIS 脚本
 scripts/package.ps1      本地打包
 tools/gen-icon.py        图标生成
-docs/设计文档.md          设计取舍与数据结构
 ```
 
 ## 隐私
