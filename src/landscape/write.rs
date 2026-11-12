@@ -142,6 +142,19 @@ fn find_folder_mut<'a>(node: &'a mut XmlNode, uuid: &str) -> Option<&'a mut XmlN
     None
 }
 
+/// 按标签名找第一个节点（顶层插入用：`Workspace` 没有固定 uuid）。
+fn find_tag_mut<'a>(node: &'a mut XmlNode, tag: &str) -> Option<&'a mut XmlNode> {
+    if node.tag == tag {
+        return Some(node);
+    }
+    for child in node.children.iter_mut() {
+        if let Some(found) = find_tag_mut(child, tag) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 fn find_service_index(root: &XmlNode, uuid: &str) -> Option<usize> {
     let services = root.child("Services")?;
     services
@@ -194,9 +207,16 @@ pub fn add_shortcut(
         .ok_or_else(|| anyhow::anyhow!("Landscape 缺少 Services 节点"))?;
     services.children.push(service_node(service, &[]));
 
-    let folder = find_folder_mut(&mut root, folder_uuid)
-        .ok_or_else(|| anyhow::anyhow!("找不到文件夹（uuid={folder_uuid}）"))?;
-    folder.children.push(XmlNode {
+    let target = if folder_uuid.is_empty() {
+        // 空 uuid = 工作区顶层：SAP 允许条目直接挂在 `Workspace` 下，
+        // 这种布局里一条文件夹都没有，不能再要求用户先建文件夹。
+        find_tag_mut(&mut root, "Workspace")
+            .ok_or_else(|| anyhow::anyhow!("Landscape 缺少 Workspace 节点"))?
+    } else {
+        find_folder_mut(&mut root, folder_uuid)
+            .ok_or_else(|| anyhow::anyhow!("找不到文件夹（uuid={folder_uuid}）"))?
+    };
+    target.children.push(XmlNode {
         tag: "Item".into(),
         attrs: vec![
             ("uuid".to_string(), item_uuid.to_string()),

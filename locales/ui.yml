@@ -96,6 +96,9 @@ app:
   folder:
     en: "Folder"
     zh-CN: "文件夹"
+  root_folder:
+    en: "Top level"
+    zh-CN: "顶层"
   base_system:
     en: "Base system"
     zh-CN: "基础系统"
@@ -182,7 +185,7 @@ app:
     zh-CN: "Landscape 里没有文件夹"
   no_base:
     en: "No base system in the landscape"
-    zh-CN: "Landscape 里没有基础系统"
+    zh-CN: "Landscape 里没有基础系统，无法新建快捷方式"
   landscape_not_found:
     en: "Landscape file not found"
     zh-CN: "未找到 Landscape 文件"

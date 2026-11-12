@@ -1676,18 +1676,15 @@ impl RootView {
         // 先把选项与默认值算齐，结束对 landscape 的借用，后面要改 self。
         let (folders, bases, work_dir) = {
             let Some(landscape) = &self.landscape else {
-                self.status = t!("app.landscape_not_found").to_string();
-                cx.notify();
+                self.show_error_dialog(t!("app.landscape_not_found").to_string(), window, cx);
                 return;
             };
             // 倒序：配置里越晚出现的是越新添加的，排在最前面方便找。
             let mut folders = folder_options(landscape);
             folders.reverse();
-            if folders.is_empty() {
-                self.status = t!("app.no_folder").to_string();
-                cx.notify();
-                return;
-            }
+            // 工作区允许把条目直接挂在根下（SAP 自己就这么存），所以永远留一个「顶层」：
+            // 一条文件夹都没有的 Landscape 不该让新建按钮点了毫无反应。
+            folders.push((String::new(), t!("app.root_folder").to_string()));
             let mut bases: Vec<(String, String, String, String)> = landscape
                 .services
                 .iter()
@@ -1702,11 +1699,6 @@ impl RootView {
                 })
                 .collect();
             bases.reverse();
-            if bases.is_empty() {
-                self.status = t!("app.no_base").to_string();
-                cx.notify();
-                return;
-            }
             let work_dir = landscape
                 .services
                 .iter()
@@ -1715,6 +1707,12 @@ impl RootView {
                 .unwrap_or_default();
             (folders, bases, work_dir)
         };
+
+        // 没有基础系统的 Landscape 建不出快捷方式：说清原因，别让按钮看起来像坏了。
+        if bases.is_empty() {
+            self.show_error_dialog(t!("app.no_base").to_string(), window, cx);
+            return;
+        }
 
         let base_index = bases
             .iter()
