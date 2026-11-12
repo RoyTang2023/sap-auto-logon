@@ -23,8 +23,6 @@ use crate::services::shcut::{self, LoginRequest};
 use crate::ui::card::Card;
 
 const TITLE_BAR: f32 = 40.;
-/// 卡片固定 4 列：再多列会让 900 宽下的卡片窄到放不下三行信息。
-const CARDS_PER_ROW: usize = 4;
 
 /// 新建快捷方式的草稿：选中的目标文件夹与基础系统。
 #[derive(Clone)]
@@ -2298,7 +2296,7 @@ impl RootView {
 
         let card = div()
             .id(element_id("card", &uuid))
-            .w_full()
+            .w(px(200.))
             .h(px(96.))
             .cursor_pointer()
             .flex()
@@ -2797,24 +2795,13 @@ fn theme_mode(
 
 /// 每行固定 4 张：窗口拉宽时让卡片变宽，而不是塞进更多列。
 fn card_grid(cards: Vec<AnyElement>) -> impl IntoElement {
-    let mut grid = div().flex().flex_col().gap(px(10.)).w_full();
-    let mut cards = cards.into_iter().peekable();
-    while cards.peek().is_some() {
-        let mut row = div().flex().flex_row().gap(px(10.)).w_full();
-        for _ in 0..CARDS_PER_ROW {
-            match cards.next() {
-                Some(card) => {
-                    row = row.child(div().flex_1().min_w_0().child(card));
-                }
-                // 不足 4 张时补空位，否则最后一行会被 flex_1 拉成整行宽。
-                None => {
-                    row = row.child(div().flex_1());
-                }
-            }
-        }
-        grid = grid.child(row);
-    }
-    grid
+    // 所有行左对齐，居中靠内容区的左右内边距。
+    div()
+        .flex()
+        .flex_wrap()
+        .justify_start()
+        .gap(px(10.))
+        .children(cards)
 }
 
 fn count_entries(nodes: &[TreeNode]) -> usize {

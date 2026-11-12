@@ -89,7 +89,8 @@ fn window_options(settings: &core::settings::AppSettings) -> WindowOptions {
             Bounds::new(point(px(x), px(y)), size(px(width), px(height)))
         })
         .unwrap_or_else(|| {
-            Bounds::new(point(px(120.), px(80.)), size(px(900.), px(760.)))
+            // 刚好一行 4 张卡：4×200 卡片 + 3×10 间距 + 左右各 14 内边距，再留一点滚动条余量。
+            Bounds::new(point(px(120.), px(80.)), size(px(866.), px(760.)))
         });
 
     WindowOptions {
@@ -100,8 +101,8 @@ fn window_options(settings: &core::settings::AppSettings) -> WindowOptions {
             ..Default::default()
         }),
         app_owns_titlebar_drag: true,
-        // 一行四张卡：窗口再窄也留得住每张约 120 的宽度，再小就没法读三行信息了。
-        window_min_size: Some(size(px(560.), px(420.))),
+        // 最小宽度 = 一张卡片（200）+ 左右内边距（28）+ 滚动条余量。
+        window_min_size: Some(size(px(260.), px(420.))),
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         ..WindowOptions::default()
     }
