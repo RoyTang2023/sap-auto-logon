@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+
+      # NSIS 不在 windows-latest 的预装清单里，安装包靠它生成。
+      - name: Install NSIS
+        run: choco install nsis --no-progress -y
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.*)"').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $tag = $env:GITHUB_REF -replace '^refs/tags/v', ''
+            if ($tag -ne $version) { throw "tag v$tag 与 Cargo.toml 的 $version 不一致" }
+          }
+          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" "/DAPP_VERSION=$version" "installer\sap-auto-logon.nsi"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SAP-Auto-Logon-setup
+          path: dist/*.exe
+          if-no-files-found: error
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/SAP-Auto-Logon-*-setup.exe
+          generate_release_notes: true
