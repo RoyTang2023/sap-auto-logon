@@ -59,17 +59,6 @@ cargo build --release  # 发布构建
 
 需要 [NSIS](https://nsis.sourceforge.io/)（脚本会自动去常见位置找 `makensis.exe`），输出 `dist\SAP-Auto-Logon-<版本>-setup.exe`。
 
-## 发布
-
-推一个与 `Cargo.toml` 版本一致的 tag 即可，GitHub Actions 会编译、打包并挂到 Release：
-
-```powershell
-git tag v0.2.2
-git push origin v0.2.2
-```
-
-Workflow：`.github/workflows/release.yml`（windows-latest + `choco install nsis`）。手动触发也能跑，只是不出 Release 只出构建产物。
-
 ## 目录
 
 ```
