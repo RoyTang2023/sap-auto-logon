@@ -1,0 +1,336 @@
+_version: 2
+
+# 应用自己的文案。键名按「界面区块.用途」组织，值必须是完整的一句话，
+# 让每个语言能自己决定词序，不要拆成片段拼接。
+app:
+  title:
+    en: "SAP Auto Logon"
+    zh-CN: "SAP Auto Logon"
+  subtitle:
+    en: "Reads SAP GUI shortcuts, double-click to log on"
+    zh-CN: "读 SAP GUI 快捷方式，双击登录"
+  recent:
+    en: "Recent"
+    zh-CN: "最近登录"
+  shortcut_count:
+    en: "%{count} shortcuts · %{folders} folders"
+    zh-CN: "%{count} 个快捷方式 · %{folders} 个文件夹"
+  ready:
+    en: "Ready"
+    zh-CN: "就绪"
+  landscape_missing:
+    en: "Landscape file not found"
+    zh-CN: "未找到 SAP Landscape 文件"
+  select_first:
+    en: "Select a shortcut first"
+    zh-CN: "请先选择一个快捷方式"
+  shortcut_gone:
+    en: "The selected shortcut no longer exists"
+    zh-CN: "选中的快捷方式已不存在"
+  base_gone:
+    en: "The base system this shortcut points to no longer exists"
+    zh-CN: "快捷方式指向的基础系统已不存在"
+  no_client:
+    en: "This shortcut has no client"
+    zh-CN: "该快捷方式没有客户端"
+  first_login:
+    en: "First logon for \"%{name}\", enter the password"
+    zh-CN: "「%{name}」首次登录，请输入密码"
+  launched:
+    en: "Started · %{name}"
+    zh-CN: "已启动 · %{name}"
+  launch_failed:
+    en: "Failed to start: %{error}"
+    zh-CN: "启动失败：%{error}"
+  sapshcut_missing:
+    en: "sapshcut.exe not found"
+    zh-CN: "未找到 sapshcut.exe"
+  need_credentials:
+    en: "Enter the account and password"
+    zh-CN: "请输入账号和密码"
+  save_password_failed:
+    en: "Failed to save the password"
+    zh-CN: "保存密码失败"
+  set_password:
+    en: "Set password"
+    zh-CN: "设置登录密码"
+  first_login_hint:
+    en: "The password is stored in Windows Credential Manager"
+    zh-CN: "首次登录，密码会保存到 Windows 凭据管理器"
+  login:
+    en: "Log on"
+    zh-CN: "登录"
+  cancel:
+    en: "Cancel"
+    zh-CN: "取消"
+  save:
+    en: "Save"
+    zh-CN: "保存"
+  delete:
+    en: "Delete"
+    zh-CN: "删除"
+  new_shortcut:
+    en: "New shortcut"
+    zh-CN: "新建快捷方式"
+  edit_params:
+    en: "Edit parameters…"
+    zh-CN: "编辑参数…"
+  set_password_menu:
+    en: "Set password…"
+    zh-CN: "设置密码…"
+  pin:
+    en: "Pin to recent"
+    zh-CN: "固定到最近"
+  unpin:
+    en: "Unpin"
+    zh-CN: "取消固定"
+  move_up:
+    en: "Move up"
+    zh-CN: "上移"
+  move_down:
+    en: "Move down"
+    zh-CN: "下移"
+  remove_recent:
+    en: "Remove from recent"
+    zh-CN: "从最近登录移除"
+  folder:
+    en: "Folder"
+    zh-CN: "文件夹"
+  base_system:
+    en: "Base system"
+    zh-CN: "基础系统"
+  name:
+    en: "Title"
+    zh-CN: "标题"
+  client:
+    en: "Client"
+    zh-CN: "客户端"
+  user:
+    en: "User"
+    zh-CN: "用户"
+  language:
+    en: "Language"
+    zh-CN: "语言"
+  connection:
+    en: "Connection"
+    zh-CN: "连接"
+  reuse:
+    en: "Reuse connection when starting the shortcut"
+    zh-CN: "启动快捷方式时重用连接"
+  trace_level:
+    en: "Trace level"
+    zh-CN: "跟踪级别"
+  trace_none:
+    en: "No trace"
+    zh-CN: "无跟踪"
+  trace_short:
+    en: "Short"
+    zh-CN: "短"
+  trace_medium:
+    en: "Medium"
+    zh-CN: "中"
+  trace_long:
+    en: "Long"
+    zh-CN: "长"
+  window_size:
+    en: "Window size"
+    zh-CN: "窗口大小"
+  maximized:
+    en: "Maximized"
+    zh-CN: "最大化的"
+  default_size:
+    en: "Default"
+    zh-CN: "默认"
+  work_dir:
+    en: "Working directory"
+    zh-CN: "工作目录"
+  client_required:
+    en: "Client is required"
+    zh-CN: "客户端不能为空"
+  title_required:
+    en: "Title and client are required"
+    zh-CN: "标题和客户端不能为空"
+  sap_logon_running:
+    en: "SAP Logon is running, close it before saving"
+    zh-CN: "SAP Logon 正在运行，请先关闭再保存"
+  saved_restart:
+    en: "Saved (restart SAP Logon to see it)"
+    zh-CN: "已保存（重启 SAP Logon 后可见）"
+  created_restart:
+    en: "Created \"%{name}\" (restart SAP Logon to see it)"
+    zh-CN: "已新建「%{name}」（重启 SAP Logon 后可见）"
+  delete_question:
+    en: "Delete \"%{name}\"?"
+    zh-CN: "删除「%{name}」？"
+  delete_hint:
+    en: "This removes the shortcut and its definition from the SAP GUI landscape. Restart SAP Logon to see the change."
+    zh-CN: "会从 SAP GUI 的 Landscape 里同时删掉这条快捷方式和它的定义，重启 SAP Logon 后生效。"
+  deleted_restart:
+    en: "Deleted from SAP (restart SAP Logon to see it)"
+    zh-CN: "已从 SAP 删除该快捷方式（重启 SAP Logon 后可见）"
+  delete_failed:
+    en: "Delete failed: %{error}"
+    zh-CN: "删除失败：%{error}"
+  save_failed:
+    en: "Save failed: %{error}"
+    zh-CN: "保存失败：%{error}"
+  create_failed:
+    en: "Create failed: %{error}"
+    zh-CN: "新建失败：%{error}"
+  no_folder:
+    en: "No folder in the landscape"
+    zh-CN: "Landscape 里没有文件夹"
+  no_base:
+    en: "No base system in the landscape"
+    zh-CN: "Landscape 里没有基础系统"
+  landscape_not_found:
+    en: "Landscape file not found"
+    zh-CN: "未找到 Landscape 文件"
+  settings:
+    en: "Settings"
+    zh-CN: "设置"
+  appearance:
+    en: "Appearance"
+    zh-CN: "外观"
+  theme_system:
+    en: "System"
+    zh-CN: "跟随系统"
+  theme_light:
+    en: "Light"
+    zh-CN: "浅色"
+  theme_dark:
+    en: "Dark"
+    zh-CN: "深色"
+  material:
+    en: "Material"
+    zh-CN: "材质"
+  material_mica:
+    en: "Mica"
+    zh-CN: "Mica"
+  material_acrylic:
+    en: "Acrylic"
+    zh-CN: "亚克力"
+  material_opaque:
+    en: "Opaque"
+    zh-CN: "不透明"
+  language_follow_system:
+    en: "Follow system"
+    zh-CN: "跟随系统"
+  language_zh:
+    en: "简体中文"
+    zh-CN: "简体中文"
+  language_en:
+    en: "English"
+    zh-CN: "English"
+  startup:
+    en: "Startup"
+    zh-CN: "启动"
+  autostart:
+    en: "Start with Windows"
+    zh-CN: "开机自启"
+  logging:
+    en: "Logging"
+    zh-CN: "日志"
+  log_to_file:
+    en: "Write log file"
+    zh-CN: "写日志文件"
+  log_level:
+    en: "Log level"
+    zh-CN: "日志级别"
+  log_dir:
+    en: "Log directory"
+    zh-CN: "日志目录"
+  log_dir_placeholder:
+    en: "Leave empty for the default directory"
+    zh-CN: "留空使用默认目录"
+  sap_section:
+    en: "SAP"
+    zh-CN: "SAP"
+  uuid_mode:
+    en: "uuid experimental mode"
+    zh-CN: "uuid 实验模式"
+  landscape_path:
+    en: "Landscape: %{path}"
+    zh-CN: "Landscape：%{path}"
+  settings_saved:
+    en: "Settings saved"
+    zh-CN: "设置已保存"
+  settings_restart:
+    en: "This setting takes effect after a restart"
+    zh-CN: "该设置重启后生效"
+  cancelled:
+    en: "Cancelled"
+    zh-CN: "已取消"
+  tray_show:
+    en: "Open window"
+    zh-CN: "打开主窗口"
+  tray_settings:
+    en: "Settings…"
+    zh-CN: "设置…"
+  tray_quit:
+    en: "Quit"
+    zh-CN: "退出"
+  tray_tooltip:
+    en: "SAP Auto Logon"
+    zh-CN: "SAP Auto Logon"
+  folder_placeholder:
+    en: "Folder"
+    zh-CN: "文件夹"
+  base_placeholder:
+    en: "Base system"
+    zh-CN: "基础系统"
+  name_placeholder:
+    en: "Name"
+    zh-CN: "名称"
+  client_placeholder:
+    en: "Client (three digits)"
+    zh-CN: "客户端（三位）"
+  user_placeholder:
+    en: "User"
+    zh-CN: "用户"
+  language_placeholder:
+    en: "Language, e.g. ZH"
+    zh-CN: "语言，如 ZH"
+  workdir_placeholder:
+    en: "Working directory"
+    zh-CN: "工作目录"
+
+  account_placeholder:
+    en: "Account"
+    zh-CN: "账号"
+  password_placeholder:
+    en: "Password"
+    zh-CN: "密码"
+  set_alias:
+    en: "Set alias…"
+    zh-CN: "设置别名…"
+  alias_hint:
+    en: "Stored locally only — it never changes the SAP GUI configuration. Clear it to restore the original name."
+    zh-CN: "只存本地，不改 SAP GUI 配置；清空即恢复原名。"
+  alias_placeholder:
+    en: "Alias, leave empty to clear"
+    zh-CN: "别名，留空即清除"
+  launching:
+    en: "Starting %{name}…"
+    zh-CN: "正在启动 %{name}…"
+  launching_hint:
+    en: "Handing over to SAP Logon, the window will close automatically."
+    zh-CN: "正在交给 SAP Logon 启动，稍后自动关闭。"
+  error_title:
+    en: "Cannot save"
+    zh-CN: "无法保存"
+  ok:
+    en: "OK"
+    zh-CN: "确定"
+  client_invalid:
+    en: "Client must be three digits"
+    zh-CN: "客户端必须是三位数字"
+  delete_reference_only:
+    en: "Only shortcuts can be deleted here; base systems belong to SAP GUI."
+    zh-CN: "只能删除快捷方式，基础系统属于 SAP GUI 自己的配置。"
+  empty_title:
+    en: "No shortcuts yet"
+    zh-CN: "还没有快捷方式"
+  empty_hint:
+    en: "Create one from a base system, then double-click it to log on."
+    zh-CN: "从一个基础系统创建快捷方式，之后双击即可登录。"
