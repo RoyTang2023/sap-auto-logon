@@ -44,6 +44,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Diagnostics_ToolHelp",
     # GetFileVersionInfo*：读 SAP GUI 版本，决定默认是否开 UUID 模式。
     "Win32_Storage_FileSystem",
+    # DwmGetWindowAttribute：读回窗口实际用的背景材质，确认 Mica 真的设上了。
+    "Win32_Graphics_Dwm",
 ] }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]

@@ -10,9 +10,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::paths;
 
+/// 配置版本：需要**一次性**改掉已保存的值时递增。
+/// 1：默认窗口宽度改成「刚好一行四张卡」，旧的 `window.bounds` 会让它看起来没生效。
+const REVISION: u32 = 1;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
+    /// `None` = 升级前写下的配置
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<u32>,
     pub general: General,
     pub behavior: Behavior,
     pub sap: Sap,
@@ -26,6 +33,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            revision: Some(REVISION),
             general: General::default(),
             behavior: Behavior::default(),
             sap: Sap::default(),
@@ -147,13 +155,19 @@ impl AppSettings {
         let Ok(text) = std::fs::read_to_string(path) else {
             return Self::default();
         };
-        match toml::from_str::<Self>(&text) {
+        let mut settings = match toml::from_str::<Self>(&text) {
             Ok(settings) => settings,
             Err(error) => {
                 log::warn!("配置解析失败（{}）：{error}，本次用默认值", path.display());
-                Self::default()
+                return Self::default();
             }
+        };
+        if settings.revision.unwrap_or(0) < REVISION {
+            // 旧版本把窗口尺寸一直存着，新默认值会被它盖掉：升级时清一次位置尺寸。
+            settings.window.bounds = None;
+            settings.revision = Some(REVISION);
         }
+        settings
     }
 
     /// 先写临时文件再改名：直接覆写时一次中断会留下半个 TOML。

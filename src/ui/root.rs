@@ -277,6 +277,12 @@ impl RootView {
         };
         view.reload(cx);
 
+        // 材质是否真的落到 DWM 上，肉眼判断不可靠：启动时读回一次记进日志。
+        log::info!(
+            "窗口背景读回：{:?}（2 = Mica）",
+            crate::platform::window::backdrop_type()
+        );
+
         // 「跟随系统」必须跟到运行中的切换：外观变化由窗口通知，这里重切主题。
         let this = cx.entity().downgrade();
         window

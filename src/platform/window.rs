@@ -115,8 +115,32 @@ pub fn show() {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-pub fn hide() {}
+/// 读回窗口实际用的系统背景类型：2 = Mica、4 = Mica Alt、1 = 无。
+///
+/// 材质是否生效肉眼很难判断（浅色 Mica 本来就淡），日志里有个确切值省得靠猜。
+#[cfg(target_os = "windows")]
+pub fn backdrop_type() -> Option<u32> {
+    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE};
+
+    let hwnd = main_window()?;
+    let mut value = 0u32;
+    let size = std::mem::size_of::<u32>() as u32;
+    let status = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE as u32,
+            &mut value as *mut _ as *mut _,
+            size,
+        )
+    };
+    (status >= 0).then_some(value)
+}
 
 #[cfg(not(target_os = "windows"))]
+pub fn hide() {}
+#[cfg(not(target_os = "windows"))]
 pub fn show() {}
+#[cfg(not(target_os = "windows"))]
+pub fn backdrop_type() -> Option<u32> {
+    None
+}
