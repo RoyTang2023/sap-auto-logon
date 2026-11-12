@@ -244,11 +244,11 @@ app:
     en: "Leave empty for the default directory"
     zh-CN: "留空使用默认目录"
   sap_section:
-    en: "SAP"
-    zh-CN: "SAP"
+    en: "SAP GUI"
+    zh-CN: "SAP GUI 特性"
   uuid_mode:
-    en: "uuid experimental mode"
-    zh-CN: "uuid 实验模式"
+    en: "UUID mode"
+    zh-CN: "UUID 模式"
   landscape_path:
     en: "Landscape: %{path}"
     zh-CN: "Landscape：%{path}"

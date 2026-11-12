@@ -69,12 +69,18 @@ impl Default for General {
     fn default() -> Self {
         Self {
             theme: "system".into(),
-            material: "mica".into(),
+            // Win11 之前没有 Mica：设成 mica 只会得到一块半透明的脏灰。
+            material: if crate::platform::system::supports_mica() {
+                "mica"
+            } else {
+                "opaque"
+            }
+            .into(),
             language: String::new(),
             start_minimized: false,
             autostart: false,
             logging: true,
-            log_level: "info".into(),
+            log_level: "error".into(),
             log_dir: String::new(),
         }
     }
@@ -113,7 +119,8 @@ pub struct Sap {
 impl Default for Sap {
     fn default() -> Self {
         Self {
-            use_uuid: false,
+            // 8.10 起 `-uuid` 才被 SAP GUI 接受；老版本按新规则拼会登录失败。
+            use_uuid: crate::platform::system::supports_uuid_mode(),
             sapshcut_path: String::new(),
             default_language: "ZH".into(),
             last_base_service: String::new(),
@@ -122,6 +129,16 @@ impl Default for Sap {
 }
 
 impl AppSettings {
+    /// 界面语言：空字符串表示跟随系统，只有中英两套文案。
+    pub fn locale(&self) -> &'static str {
+        match self.general.language.as_str() {
+            "en" => "en",
+            "zh_CN" | "zh-CN" => "zh-CN",
+            _ if crate::platform::system::prefers_chinese() => "zh-CN",
+            _ => "en",
+        }
+    }
+
     pub fn load() -> Self {
         Self::load_from(&paths::settings_path())
     }

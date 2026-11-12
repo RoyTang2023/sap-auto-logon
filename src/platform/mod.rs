@@ -4,5 +4,6 @@ pub mod autostart;
 pub mod folder_picker;
 pub mod process;
 pub mod single_instance;
+pub mod system;
 pub mod tray;
 pub mod window;

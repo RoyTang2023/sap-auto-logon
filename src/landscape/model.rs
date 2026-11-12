@@ -42,6 +42,18 @@ impl Default for ServiceKind {
     }
 }
 
+impl Service {
+    /// 只有配好连接参数的 `Reference` 才算快捷方式。
+    ///
+    /// SAP GUI 把基础系统拖进工作区时也会生成一个只有 `name + link` 的
+    /// `Reference`（用户拿它当基础系统的镜像，双击还得手填客户端和用户），
+    /// 这类条目列出来只会淹没真正的快捷方式，所以按「有客户端/用户」区分。
+    pub fn is_shortcut(&self) -> bool {
+        self.kind == ServiceKind::Reference
+            && (self.shortcut || !self.client.is_empty() || !self.user.is_empty())
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Router {
     pub uuid: String,

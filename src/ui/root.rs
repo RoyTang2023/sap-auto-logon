@@ -23,6 +23,8 @@ use crate::services::shcut::{self, LoginRequest};
 use crate::ui::card::Card;
 
 const TITLE_BAR: f32 = 40.;
+/// 卡片固定 4 列：再多列会让 900 宽下的卡片窄到放不下三行信息。
+const CARDS_PER_ROW: usize = 4;
 
 /// 新建快捷方式的草稿：选中的目标文件夹与基础系统。
 #[derive(Clone)]
@@ -172,15 +174,49 @@ impl RootView {
 
 
         let settings_material_select = cx.new(|cx| {
-            SelectState::new(vec!["Mica".to_string(), "亚克力".to_string(), "不透明".to_string()], None, window, cx)
+            let index = match settings.general.material.as_str() {
+                "acrylic" => 1,
+                "opaque" => 2,
+                _ => 0,
+            };
+            SelectState::new(
+                vec!["Mica".to_string(), "亚克力".to_string(), "不透明".to_string()],
+                Some(IndexPath::new(index)),
+                window,
+                cx,
+            )
         });
         let settings_language_select = cx.new(|cx| {
-            SelectState::new(vec!["跟随系统".to_string(), "简体中文".to_string(), "English".to_string()], None, window, cx)
+            let index = match settings.general.language.as_str() {
+                "zh_CN" | "zh-CN" => 1,
+                "en" => 2,
+                _ => 0,
+            };
+            SelectState::new(
+                vec!["跟随系统".to_string(), "简体中文".to_string(), "English".to_string()],
+                Some(IndexPath::new(index)),
+                window,
+                cx,
+            )
         });
         let settings_loglevel_select = cx.new(|cx| {
+            // 值仍按 log 的级别名存，界面给中文：这里的字符串只是给人看的。
+            let index = match settings.general.log_level.as_str() {
+                "warn" => 1,
+                "info" => 2,
+                "debug" => 3,
+                "trace" => 4,
+                _ => 0,
+            };
             SelectState::new(
-                vec!["error".to_string(), "warn".to_string(), "info".to_string(), "debug".to_string(), "trace".to_string()],
-                None,
+                vec![
+                    "错误".to_string(),
+                    "警告".to_string(),
+                    "信息".to_string(),
+                    "调试".to_string(),
+                    "跟踪".to_string(),
+                ],
+                Some(IndexPath::new(index)),
                 window,
                 cx,
             )
@@ -243,6 +279,16 @@ impl RootView {
         };
         view.reload(cx);
 
+        // 「跟随系统」必须跟到运行中的切换：外观变化由窗口通知，这里重切主题。
+        let this = cx.entity().downgrade();
+        window
+            .observe_window_appearance(move |window, cx| {
+                let appearance = window.appearance();
+                this.update(cx, |view, cx| view.follow_system_appearance(appearance, cx))
+                    .ok();
+            })
+            .detach();
+
         cx.subscribe_in(
             &username_input,
             window,
@@ -292,7 +338,7 @@ impl RootView {
         cx.subscribe_in(
             &view.settings_material_select,
             window,
-            |this, _state, event: &SelectEvent<Vec<String>>, _window, cx| {
+            |this, _state, event: &SelectEvent<Vec<String>>, window, cx| {
                 if let SelectEvent::Confirm(Some(value)) = event {
                     this.settings.general.material = match value.as_str() {
                         "亚克力" => "acrylic",
@@ -301,7 +347,10 @@ impl RootView {
                     }
                     .to_string();
                     let _ = this.settings.save();
-                    this.status = t!("app.settings_restart").to_string();
+                    // 材质是窗口属性，能当场换掉，不必重启。
+                    window.set_background_appearance(material_appearance(
+                        &this.settings.general.material,
+                    ));
                     cx.notify();
                 }
             },
@@ -320,10 +369,7 @@ impl RootView {
                     }
                     .to_string();
                     let _ = this.settings.save();
-                    let locale = match this.settings.general.language.as_str() {
-                        "en" => "en",
-                        _ => "zh-CN",
-                    };
+                    let locale = this.settings.locale();
                     rust_i18n::set_locale(locale);
                     gpui_kit::component::set_locale(locale);
                     cx.refresh_windows();
@@ -338,7 +384,14 @@ impl RootView {
             window,
             |this, _state, event: &SelectEvent<Vec<String>>, _window, cx| {
                 if let SelectEvent::Confirm(Some(value)) = event {
-                    this.settings.general.log_level = value.clone();
+                    this.settings.general.log_level = match value.as_str() {
+                        "警告" => "warn",
+                        "信息" => "info",
+                        "调试" => "debug",
+                        "跟踪" => "trace",
+                        _ => "error",
+                    }
+                    .to_string();
                     let _ = this.settings.save();
                     this.status = t!("app.settings_restart").to_string();
                     cx.notify();
@@ -374,43 +427,62 @@ impl RootView {
     }
 
     /// 托盘事件轮询：菜单点击投递到全局通道，这里在 UI 线程排空。
-    fn start_tray_poll(&self, window: &mut Window, cx: &mut Context<Self>) {
+    /// 用 spawn（不绑定窗口）：窗口收进托盘后轮询必须继续跑。
+    fn start_tray_poll(&self, _window: &mut Window, cx: &mut Context<Self>) {
         let this = cx.entity().clone();
-        cx.spawn_in(window, async move |_weak_view, cx| loop {
+        cx.spawn(async move |_weak_view, cx| loop {
             cx.background_executor()
                 .timer(std::time::Duration::from_millis(200))
                 .await;
 
-            let action = cx
-                .update(|_window, cx| this.update(cx, |view, cx| view.poll_tray(cx)))
-                .ok()
-                .flatten();
+            let action =
+                cx.update(|cx| this.update(cx, |view, cx| view.poll_tray(cx)));
+            let Some(action) = action else {
+                continue;
+            };
+            log::info!("tray action: {action:?}");
 
             match action {
-                Some(crate::platform::tray::TrayAction::Quit) => {
-                    let _ = cx.update(|_window, cx| cx.quit());
+                crate::platform::tray::TrayAction::Quit => {
+                    let _ = cx.update(|cx| cx.quit());
                     return;
                 }
-                Some(crate::platform::tray::TrayAction::Settings) => {
-                    // 托盘菜单没有窗口上下文，借当前窗口打开设置 Dialog。
-                    let _ = cx.update(|window, cx| {
-                        let _ = this.update(cx, |view, cx| {
-                            view.open_settings_dialog(window, cx);
-                        });
+                crate::platform::tray::TrayAction::Settings => {
+                    // 先把窗口显示出来（不依赖 gpui 的窗口句柄），再弹设置。
+                    crate::platform::window::show();
+                    let _ = cx.update(|cx| {
+                        log::info!("tray settings: {} window(s)", cx.windows().len());
+                        for handle in cx.windows() {
+                            let result = handle.update(cx, |_root, window, cx| {
+                                // ShowWindow 之后 gpui 可能还认为窗口不可见，
+                                // 不重绘的话恢复出来的是一张空窗口。
+                                window.refresh();
+                                let _ = this.update(cx, |view, cx| {
+                                    view.open_settings_dialog(window, cx);
+                                });
+                            });
+                            if result.is_err() {
+                                log::warn!("tray settings: window update failed");
+                            }
+                        }
                     });
                 }
-                Some(crate::platform::tray::TrayAction::ShowWindow) => {
-                    let _ = cx.update(|window, _cx| {
-                        crate::platform::window::show();
-                        window.activate_window();
+                crate::platform::tray::TrayAction::ShowWindow => {
+                    // 直接按进程找 HWND 显示，窗口隐藏时 gpui 的 handle 可能已失效。
+                    crate::platform::window::show();
+                    let _ = cx.update(|cx| {
+                        for handle in cx.windows() {
+                            let _ = handle.update(cx, |_root, window, _cx| {
+                                window.refresh();
+                                window.activate_window();
+                            });
+                        }
                     });
                 }
-                None => {}
             }
         })
         .detach();
-    }
-    fn poll_tray(&self, _cx: &mut Context<Self>) -> Option<crate::platform::tray::TrayAction> {
+    }    fn poll_tray(&self, _cx: &mut Context<Self>) -> Option<crate::platform::tray::TrayAction> {
         self.tray.as_ref().and_then(|tray| tray.poll())
     }
 
@@ -494,7 +566,20 @@ impl RootView {
         self.status = match &self.landscape {
             Some(landscape) => {
                 let entries = count_entries(&landscape.tree);
-                format!("{} 个快捷方式 · {} 个文件夹", entries, count_folders(&landscape.tree))
+                let folders = count_folders(&landscape.tree);
+                // 快捷方式的判定规则一改就要能从日志看出效果，不必靠截图猜。
+                log::info!(
+                    "landscape: {} 个服务 / {} 个快捷方式 / {} 条树条目 / {} 个文件夹",
+                    landscape.services.len(),
+                    landscape
+                        .services
+                        .iter()
+                        .filter(|service| service.is_shortcut())
+                        .count(),
+                    entries,
+                    folders
+                );
+                format!("{} 个快捷方式 · {} 个文件夹", entries, folders)
             }
             None => "未找到 SAP Landscape 文件".into(),
         };
@@ -956,9 +1041,9 @@ impl RootView {
                     )
                     .child(div().flex_1().child(content))
             };
-            let theme_button = |value: &'static str, label: &'static str, active: bool| {
+            let theme_button = |value: &'static str, label: String, active: bool| {
                 let target = this.clone();
-                let button = Button::new(element_id("theme", value)).label(label.to_string());
+                let button = Button::new(element_id("theme", value)).label(label);
                 let button = if active { button.primary() } else { button };
                 button.on_click(move |_, window, cx| {
                     target.update(cx, |view, cx| {
@@ -979,9 +1064,9 @@ impl RootView {
                         .flex()
                         .flex_row()
                         .gap(px(8.))
-                        .child(theme_button("system", "跟随系统", theme.is_empty() || theme == "system"))
-                        .child(theme_button("light", "浅色", theme == "light"))
-                        .child(theme_button("dark", "深色", theme == "dark"))
+                        .child(theme_button("system", t!("app.theme_system").to_string(), theme.is_empty() || theme == "system"))
+                        .child(theme_button("light", t!("app.theme_light").to_string(), theme == "light"))
+                        .child(theme_button("dark", t!("app.theme_dark").to_string(), theme == "dark"))
                         .into_any_element(),
                 ))
                 .child(row(
@@ -1072,20 +1157,26 @@ impl RootView {
 
     /// 按设置里的主题档套用；「跟随系统」读窗口外观。
     fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        use gpui_kit::component::ThemeMode;
-
-        let mode = match self.settings.general.theme.as_str() {
-            "light" => ThemeMode::Light,
-            "dark" => ThemeMode::Dark,
-            _ => {
-                if window.appearance() == gpui_kit::WindowAppearance::Dark {
-                    ThemeMode::Dark
-                } else {
-                    ThemeMode::Light
-                }
-            }
-        };
+        let mode = theme_mode(&self.settings.general.theme, window.appearance());
         gpui_kit::component::Theme::change(mode, Some(window), cx);
+    }
+
+    /// 「跟随系统」时窗口外观一变就跟上；固定浅色/深色是用户的明确选择，不响应系统。
+    fn follow_system_appearance(
+        &mut self,
+        appearance: gpui_kit::WindowAppearance,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(self.settings.general.theme.as_str(), "light" | "dark") {
+            return;
+        }
+        let mode = theme_mode("", appearance);
+        if gpui_kit::component::Theme::global(cx).mode == mode {
+            return;
+        }
+        log::info!("主题跟随系统：{mode:?}");
+        gpui_kit::component::Theme::change(mode, None, cx);
+        cx.notify();
     }
 
     fn save_settings(&mut self, cx: &mut Context<Self>) {
@@ -1489,7 +1580,6 @@ impl RootView {
     fn header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
         let border = cx.theme().border;
-        let is_dark = cx.theme().is_dark();
         let control = move |id: &'static str, area: WindowControlArea, glyph: &'static str| {
             div()
                 .id(id)
@@ -1537,11 +1627,6 @@ impl RootView {
                 )),
             )
             .child(
-                tool("toggle-theme", if is_dark { "☀" } else { "☾" }).on_click(cx.listener(
-                    |this, _: &ClickEvent, window, cx| this.toggle_theme(window, cx),
-                )),
-            )
-            .child(
                 tool("open-settings", "⚙").on_click(cx.listener(
                     |this, _: &ClickEvent, window, cx| {
                         this.open_settings(window, cx);
@@ -1578,17 +1663,6 @@ impl RootView {
                     .child("✕"),
             )
             .child(div().w(px(4.)))
-    }
-
-    fn toggle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.settings.general.theme = if cx.theme().is_dark() {
-            "light".into()
-        } else {
-            "dark".into()
-        };
-        let _ = self.settings.save();
-        self.apply_theme(window, cx);
-        cx.notify();
     }
 
     fn begin_new_shortcut(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2087,7 +2161,7 @@ impl RootView {
             if !landscape
                 .services
                 .iter()
-                .any(|service| service.kind == ServiceKind::Reference)
+                .any(|service| service.is_shortcut())
             {
                 return div()
                     .id("cards")
@@ -2118,9 +2192,9 @@ impl RootView {
                         recent_ids
                             .iter()
                             .filter_map(|id| landscape.service(id))
-                            // 只展示快捷方式：Workspaces 里可能直接挂了基础系统（SAPGUI），
-                            // 那种条目不是快捷方式，双击也不该走我们的登录流程。
-                            .filter(|service| service.kind == ServiceKind::Reference)
+                            // 只展示快捷方式：工作区里直接挂的基础系统与未配置的
+                            // 裸 Reference 都不是可登录的快捷方式。
+                            .filter(|service| service.is_shortcut())
                             .map(|service| self.shortcut_card(service, landscape, true, cx))
                             .collect(),
                     ));
@@ -2134,9 +2208,9 @@ impl RootView {
                             .entries
                             .iter()
                             .filter_map(|id| landscape.service(id))
-                            // 只展示快捷方式：Workspaces 里可能直接挂了基础系统（SAPGUI），
-                            // 那种条目不是快捷方式，双击也不该走我们的登录流程。
-                            .filter(|service| service.kind == ServiceKind::Reference)
+                            // 只展示快捷方式：工作区里直接挂的基础系统与未配置的
+                            // 裸 Reference 都不是可登录的快捷方式。
+                            .filter(|service| service.is_shortcut())
                             .map(|service| self.shortcut_card(service, landscape, false, cx))
                             .collect(),
                     ));
@@ -2224,7 +2298,7 @@ impl RootView {
 
         let card = div()
             .id(element_id("card", &uuid))
-            .w(px(200.))
+            .w_full()
             .h(px(96.))
             .cursor_pointer()
             .flex()
@@ -2615,7 +2689,24 @@ fn card_groups(landscape: &Landscape) -> Vec<CardGroup> {
         }
     }
 
+    // 顶层直接挂的条目（没有文件夹）也要显示：SAP 允许把快捷方式直接放在 Workspace 下，
+    // 只遍历文件夹的话，这种布局会一张卡都不显示。
+    let loose: Vec<String> = landscape
+        .tree
+        .iter()
+        .filter_map(|node| match node {
+            TreeNode::Entry { service_id, .. } => Some(service_id.clone()),
+            TreeNode::Folder { .. } => None,
+        })
+        .collect();
+
     let mut out = Vec::new();
+    if !loose.is_empty() {
+        out.push(CardGroup {
+            name: "未分类".to_string(),
+            entries: loose,
+        });
+    }
     walk(&landscape.tree, "", &mut out);
     out
 }
@@ -2669,14 +2760,61 @@ fn section_title(name: &str, muted: Hsla) -> impl IntoElement {
         )
 }
 
+/// 设置里的材质名 → 窗口背景外观。Mica 只有 Win11 有，老系统上按不透明处理。
+pub fn material_appearance(material: &str) -> gpui_kit::WindowBackgroundAppearance {
+    use gpui_kit::WindowBackgroundAppearance;
+
+    match material {
+        "mica" if crate::platform::system::supports_mica() => WindowBackgroundAppearance::MicaBackdrop,
+        "acrylic" => WindowBackgroundAppearance::Blurred,
+        _ => WindowBackgroundAppearance::Opaque,
+    }
+}
+
+/// 主题偏好 + 系统外观 → 实际档位。空串与认不出的取值一律按跟随系统处理，
+/// 这样手工改坏的配置不会把界面卡在某个固定档上。
+fn theme_mode(
+    preference: &str,
+    appearance: gpui_kit::WindowAppearance,
+) -> gpui_kit::component::ThemeMode {
+    use gpui_kit::WindowAppearance;
+    use gpui_kit::component::ThemeMode;
+
+    match preference {
+        "light" => ThemeMode::Light,
+        "dark" => ThemeMode::Dark,
+        // macOS 的 Vibrant 档也是深色，只认 Dark 会让那边少跟一种情况。
+        _ if matches!(
+            appearance,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark
+        ) =>
+        {
+            ThemeMode::Dark
+        }
+        _ => ThemeMode::Light,
+    }
+}
+
+/// 每行固定 4 张：窗口拉宽时让卡片变宽，而不是塞进更多列。
 fn card_grid(cards: Vec<AnyElement>) -> impl IntoElement {
-    // 所有行左对齐，居中靠内容区的左右内边距。
-    div()
-        .flex()
-        .flex_wrap()
-        .justify_start()
-        .gap(px(10.))
-        .children(cards)
+    let mut grid = div().flex().flex_col().gap(px(10.)).w_full();
+    let mut cards = cards.into_iter().peekable();
+    while cards.peek().is_some() {
+        let mut row = div().flex().flex_row().gap(px(10.)).w_full();
+        for _ in 0..CARDS_PER_ROW {
+            match cards.next() {
+                Some(card) => {
+                    row = row.child(div().flex_1().min_w_0().child(card));
+                }
+                // 不足 4 张时补空位，否则最后一行会被 flex_1 拉成整行宽。
+                None => {
+                    row = row.child(div().flex_1());
+                }
+            }
+        }
+        grid = grid.child(row);
+    }
+    grid
 }
 
 fn count_entries(nodes: &[TreeNode]) -> usize {
@@ -2720,11 +2858,15 @@ fn element_id(prefix: &'static str, value: &str) -> ElementId {
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // 深色下外壳用比纯黑浅一档的灰。
-        let sidebar = if cx.theme().is_dark() {
+        let mut shell: gpui_kit::Hsla = if cx.theme().is_dark() {
             gpui_kit::rgb(0x161618).into()
         } else {
             cx.theme().sidebar
         };
+        // 有材质时外壳必须半透明，否则底色把窗口背后的 Mica 全挡住了。
+        if !matches!(material_appearance(&self.settings.general.material), gpui_kit::WindowBackgroundAppearance::Opaque) {
+            shell.a = if cx.theme().is_dark() { 0.72 } else { 0.80 };
+        }
 
         // 顶栏浮层不占布局，所以内容从窗口顶端开始，靠 padding 让开按钮。
         let root = div()
@@ -2732,7 +2874,7 @@ impl Render for RootView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(sidebar)
+            .bg(shell)
             .child(
                 div()
                     .flex_1()

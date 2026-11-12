@@ -37,6 +37,10 @@ if (-not $makensisPath) {
 }
 
 Write-Host ">>> using $makensisPath"
+# 先清掉旧安装包：dist 只保留本次产物，避免版本混在一起。
+if (Test-Path 'dist') {
+    Get-ChildItem 'dist' -Filter 'SAP-Auto-Logon-*-setup.exe' | Remove-Item -Force
+}
 New-Item -ItemType Directory -Force -Path 'dist' | Out-Null
 & $makensisPath "/DAPP_VERSION=$Version" "installer\sap-auto-logon.nsi"
 if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }

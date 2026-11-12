@@ -1,6 +1,6 @@
 [package]
 name = "sap-auto-logon"
-version = "0.2.0"
+version = "0.2.2"
 edition = "2021"
 description = "SAP Auto Logon"
 license = "MIT"
@@ -42,6 +42,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Threading",
     "Win32_System_LibraryLoader",
     "Win32_System_Diagnostics_ToolHelp",
+    # GetFileVersionInfo*：读 SAP GUI 版本，决定默认是否开 UUID 模式。
+    "Win32_Storage_FileSystem",
 ] }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]

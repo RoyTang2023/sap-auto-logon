@@ -55,7 +55,7 @@ pub fn parse(text: &str) -> anyhow::Result<Landscape> {
         }
     }
 
-    let kinds = kind_map(&landscape.services);
+    let shortcuts = shortcut_map(&landscape.services);
     for child in root.children().filter(|node| node.is_element()) {
         if child.tag_name().name() != "Workspaces" {
             continue;
@@ -64,21 +64,21 @@ pub fn parse(text: &str) -> anyhow::Result<Landscape> {
             .children()
             .filter(|node| node.is_element() && node.tag_name().name() == "Workspace")
         {
-            landscape.tree = read_children(workspace, &kinds);
+            landscape.tree = read_children(workspace, &shortcuts);
         }
     }
 
     Ok(landscape)
 }
 
-fn kind_map(services: &[Service]) -> HashMap<String, ServiceKind> {
+fn shortcut_map(services: &[Service]) -> HashMap<String, bool> {
     services
         .iter()
-        .map(|service| (service.uuid.clone(), service.kind))
+        .map(|service| (service.uuid.clone(), service.is_shortcut()))
         .collect()
 }
 
-fn read_children(node: Node<'_, '_>, kinds: &HashMap<String, ServiceKind>) -> Vec<TreeNode> {
+fn read_children(node: Node<'_, '_>, shortcuts: &HashMap<String, bool>) -> Vec<TreeNode> {
     let mut children = Vec::new();
     for child in node.children().filter(|child| child.is_element()) {
         match child.tag_name().name() {
@@ -87,12 +87,12 @@ fn read_children(node: Node<'_, '_>, kinds: &HashMap<String, ServiceKind>) -> Ve
                 children.push(TreeNode::Folder {
                     uuid: attribute(child, "uuid"),
                     name,
-                    children: read_children(child, kinds),
+                    children: read_children(child, shortcuts),
                 });
             }
             "Item" => {
                 let service_id = attribute(child, "serviceid");
-                if kinds.get(&service_id) == Some(&ServiceKind::Reference) {
+                if shortcuts.get(&service_id) == Some(&true) {
                     children.push(TreeNode::Entry {
                         service_id,
                         item_id: attribute(child, "uuid"),
@@ -138,8 +138,10 @@ fn attribute(node: Node<'_, '_>, name: &str) -> String {
 /// 读文件，并优先使用缓存：源文件 `mtime + size` 没变就不重新解析。
 pub fn parse_file(path: &std::path::Path) -> Option<Landscape> {
     if let Some(cached) = crate::core::cache::load_if_fresh(path) {
+        log::info!("landscape: 命中缓存 {}", path.display());
         return Some(cached);
     }
+    log::info!("landscape: 重新解析 {}", path.display());
     let text = std::fs::read_to_string(path).ok()?;
     match parse(&text) {
         Ok(landscape) => Some(landscape),

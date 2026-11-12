@@ -40,11 +40,7 @@ fn main() {
     }
 
     // 托盘菜单在创建时就用当前语言，之后再切语言需要重建菜单，不在本轮范围。
-    let locale = match settings.general.language.as_str() {
-        "en" => "en",
-        _ => "zh-CN",
-    };
-    rust_i18n::set_locale(locale);
+    rust_i18n::set_locale(settings.locale());
 
     let tray = match platform::tray::Tray::create() {
         Ok(tray) => Some(tray),
@@ -63,10 +59,7 @@ fn main() {
             rust_i18n::extend!(gpui_component);
             gpui_kit::init(cx);
 
-            let locale = match settings.general.language.as_str() {
-                "en" => "en",
-                _ => "zh-CN",
-            };
+            let locale = settings.locale();
             gpui_kit::component::set_locale(locale);
             rust_i18n::set_locale(locale);
 
@@ -82,6 +75,11 @@ fn main() {
         });
 }
 
+/// 窗口材质：Mica 只有 Win11 有；亚克力在 Win10 可用，但要实时采样，拖动会掉帧。
+fn background_appearance(material: &str) -> WindowBackgroundAppearance {
+    ui::root::material_appearance(material)
+}
+
 /// 主窗口：系统标题栏隐藏，由界面自绘（拖动、窗口按钮都自己做）。
 fn window_options(settings: &core::settings::AppSettings) -> WindowOptions {
     let bounds = settings
@@ -95,15 +93,15 @@ fn window_options(settings: &core::settings::AppSettings) -> WindowOptions {
         });
 
     WindowOptions {
-        window_background: WindowBackgroundAppearance::Opaque,
+        window_background: background_appearance(&settings.general.material),
         titlebar: Some(TitlebarOptions {
             title: None,
             appears_transparent: true,
             ..Default::default()
         }),
         app_owns_titlebar_drag: true,
-        // 最小宽度 = 一张卡片（200）+ 左右内边距（28）+ 滚动条余量。
-        window_min_size: Some(size(px(260.), px(420.))),
+        // 一行四张卡：窗口再窄也留得住每张约 120 的宽度，再小就没法读三行信息了。
+        window_min_size: Some(size(px(560.), px(420.))),
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         ..WindowOptions::default()
     }

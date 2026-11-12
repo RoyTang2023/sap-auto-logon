@@ -13,11 +13,19 @@ use crate::landscape::model::Landscape;
 
 /// 缓存结构变化时必须递增，否则旧缓存会被当成新结构读。
 /// 2：修复了「Workspaces 排在 Services 之前导致树为空」的解析 bug，旧缓存作废。
-pub const SCHEMA: u32 = 2;
+pub const SCHEMA: u32 = 3;
+
+/// 缓存跟着程序版本走：解析规则一改，旧结果就不能再用，
+/// 否则用户升级后看到的还是上一版解析出来的东西，且没有任何提示。
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CacheFile {
     pub schema: u32,
+    #[serde(default)]
+    pub app_version: String,
     pub source: String,
     pub source_mtime: u64,
     pub source_size: u64,
@@ -26,6 +34,15 @@ pub struct CacheFile {
     /// 上次扫描时已保存密码的快捷方式 uuid：启动先用它点亮状态灯，后台再校正。
     #[serde(default)]
     pub password_ready: Vec<String>,
+}
+
+impl CacheFile {
+    fn usable(&self, mtime: u64, size: u64) -> bool {
+        self.schema == SCHEMA
+            && self.app_version == app_version()
+            && self.source_mtime == mtime
+            && self.source_size == size
+    }
 }
 
 pub fn source_stamp(path: &Path) -> Option<(u64, u64)> {
@@ -43,7 +60,7 @@ pub fn load_if_fresh(source: &Path) -> Option<Landscape> {
     let (mtime, size) = source_stamp(source)?;
     let text = std::fs::read_to_string(paths::cache_path()).ok()?;
     let cache: CacheFile = serde_json::from_str(&text).ok()?;
-    if cache.schema != SCHEMA || cache.source_mtime != mtime || cache.source_size != size {
+    if !cache.usable(mtime, size) {
         return None;
     }
     Some(cache.landscape)
@@ -54,6 +71,7 @@ pub fn save(source: &Path, landscape: &Landscape) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("无法读取源文件时间戳：{}", source.display()))?;
     let cache = CacheFile {
         schema: SCHEMA,
+        app_version: app_version().to_string(),
         source: source.display().to_string(),
         source_mtime: mtime,
         source_size: size,
@@ -87,7 +105,7 @@ pub fn load_password_ready(source: &Path) -> Vec<String> {
     let Some(cache) = read_cache() else {
         return Vec::new();
     };
-    if cache.schema != SCHEMA || cache.source_mtime != mtime || cache.source_size != size {
+    if !cache.usable(mtime, size) {
         return Vec::new();
     }
     cache.password_ready
@@ -101,7 +119,7 @@ pub fn save_password_ready(source: &Path, ready: Vec<String>) {
     let Some(mut cache) = read_cache() else {
         return;
     };
-    if cache.schema != SCHEMA || cache.source_mtime != mtime || cache.source_size != size {
+    if !cache.usable(mtime, size) {
         return;
     }
     cache.password_ready = ready;
