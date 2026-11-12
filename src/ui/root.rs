@@ -2851,8 +2851,12 @@ impl Render for RootView {
             cx.theme().sidebar
         };
         // 有材质时外壳必须半透明，否则底色把窗口背后的 Mica 全挡住了。
-        if !matches!(material_appearance(&self.settings.general.material), gpui_kit::WindowBackgroundAppearance::Opaque) {
-            shell.a = if cx.theme().is_dark() { 0.72 } else { 0.80 };
+        // 浅色 Mica 的底色本来就接近白，透明度给低了等于没有，所以浅色档压得更狠。
+        if !matches!(
+            material_appearance(&self.settings.general.material),
+            gpui_kit::WindowBackgroundAppearance::Opaque
+        ) {
+            shell.a = if cx.theme().is_dark() { 0.68 } else { 0.62 };
         }
 
         // 顶栏浮层不占布局，所以内容从窗口顶端开始，靠 padding 让开按钮。

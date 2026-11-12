@@ -65,6 +65,13 @@ fn main() {
 
             let settings_for_view = settings.clone();
             let options = window_options(&settings);
+            // 材质生效与否肉眼不好判断（浅色 Mica 本来就淡），留一行日志便于核对。
+            log::info!(
+                "窗口材质 {} → {:?}（Windows build {:?}）",
+                settings.general.material,
+                background_appearance(&settings.general.material),
+                platform::system::windows_build()
+            );
             gpui_kit::open_window(options, cx, move |window, cx| {
                 let tray = tray;
                 cx.new(|cx| {
