@@ -277,6 +277,9 @@ impl RootView {
         };
         view.reload(cx);
 
+        // 把已经开着的 SAP 会话窗口的任务栏图标按系统标识换掉。
+        crate::platform::taskbar::apply_session_icons();
+
         // 材质是否真的落到 DWM 上，肉眼判断不可靠：启动时读回一次记进日志。
         log::info!(
             "窗口背景读回：{:?}（2 = Mica）",
@@ -1572,6 +1575,14 @@ impl RootView {
                 self.last_result.insert(service_uuid.clone(), true);
                 self.status = t!("app.launched", name = service_name).to_string();
                 self.toast(self.status.clone(), NotificationType::Success, window, cx);
+                // SAP GUI 拉窗口要几秒，等它出现再补任务栏图标；只补这一次，不轮询。
+                cx.spawn(async move |_this, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(4000))
+                        .await;
+                    crate::platform::taskbar::apply_session_icons();
+                })
+                .detach();
             }
             Err(error) => {
                 self.last_result.insert(service_uuid.clone(), false);
