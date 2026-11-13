@@ -29,29 +29,30 @@ const ICON_BIG: usize = 1;
 /// 图标画多大。任务栏按钮在小/中尺寸下都够用，系统再缩小也不会糊。
 const ICON_SIZE: u32 = 32;
 
-/// 系统标识 → 颜色的映射必须稳定：同一台机器上同一 SID 永远同一个颜色。
-/// 挑的是中饱和、深浅主题下都清楚、彼此区分度高的八种。
-const PALETTE: [(u8, u8, u8); 8] = [
-    (0x2F, 0x6B, 0xE6), // 蓝
-    (0x12, 0xA5, 0x94), // 青绿
-    (0x7C, 0x5C, 0xD6), // 紫
-    (0xE0, 0x6C, 0x24), // 橙
-    (0xD8, 0x45, 0x3C), // 红
-    (0xC6, 0x3C, 0x8A), // 品红
-    (0x0B, 0x6E, 0x99), // 深青
-    (0x6B, 0x8E, 0x23), // 橄榄
-];
+/// SID → 颜色，与卡片上 SID 标签用的是同一套：
+/// 开发蓝、质量金、生产红、其余青。图标背景取这组饱和色，白字才压得住。
+fn sid_color(sid: &str) -> (u8, u8, u8) {
+    match sid.chars().next().map(|c| c.to_ascii_uppercase()) {
+        Some('D') => (0x1F, 0x4E, 0x8C),
+        Some('Q') => (0x7A, 0x54, 0x10),
+        Some('P') => (0x8E, 0x2F, 0x3C),
+        _ => (0x15, 0x5F, 0x5F),
+    }
+}
 
 /// 已创建的图标句柄，按 `(系统标识, 客户端)` 缓存：重复创建会泄漏 GDI 对象，
 /// 而且任务栏在句柄换掉时会闪一下。
 static ICONS: Mutex<Option<HashMap<(String, String), isize>>> = Mutex::new(None);
 
-/// 系统标识占用的颜色槽：新 SID 从它自己的哈希位开始找空位，
-/// 这样哈希撞车时两个系统也不会被涂成同一个颜色。
-static SID_COLORS: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
-
 /// 扫一遍现有会话窗口，把缺图标的补上。启动时和每次登录后调用即可。
 pub fn apply_session_icons() {
+    // 只有 SAP GUI 8.10 且任务栏按「系统标识和客户端」分组时才值得动手：
+    // 窗口本来不分组的话，每张图标都一样，画了也没意义。
+    if !crate::platform::system::taskbar_grouped_by_system() {
+        log::debug!("任务栏图标跳过：SAP GUI 未按系统标识和客户端分组");
+        return;
+    }
+
     let sessions = collect_sessions();
     if sessions.is_empty() {
         return;
@@ -121,39 +122,10 @@ fn split_title(title: &str) -> Option<(String, String)> {
     Some((sid.to_string(), client))
 }
 
-fn palette_index(sid: &str) -> usize {
-    let mut hash: u32 = 2_166_136_261;
-    for byte in sid.bytes() {
-        hash = (hash ^ byte as u32).wrapping_mul(16_777_619);
-    }
-    (hash as usize) % PALETTE.len()
-}
-
-/// 给 SID 分配一个颜色槽：哈希位被别的系统占了就往后顺延。
-fn color_index(sid: &str) -> usize {
-    let mut guard = match SID_COLORS.lock() {
-        Ok(guard) => guard,
-        Err(_) => return palette_index(sid),
-    };
-    let assigned = guard.get_or_insert_with(HashMap::new);
-    if let Some(index) = assigned.get(sid) {
-        return *index;
-    }
-
-    let taken: std::collections::HashSet<usize> = assigned.values().copied().collect();
-    let mut index = palette_index(sid);
-    for _ in 0..PALETTE.len() {
-        if !taken.contains(&index) {
-            break;
-        }
-        index = (index + 1) % PALETTE.len();
-    }
-    assigned.insert(sid.to_string(), index);
-    index
-}
+/// `DS4(2)/100 传输组织器` → (`DS4`, `100`)。
 
 fn build_icon(sid: &str, client: &str) -> isize {
-    let (r, g, b) = PALETTE[color_index(sid)];
+    let (r, g, b) = sid_color(sid);
     // 圆角底色走像素绘制（抗锯齿），数字交给 GDI 用系统字体画——点阵字放大后太笨重。
     let mut pixels = render_background(ICON_SIZE, (r, g, b));
     unsafe {
@@ -336,4 +308,5 @@ fn inside_round_rect(x: f32, y: f32, size: f32, radius: f32) -> bool {
     let dy = y - cy;
     dx * dx + dy * dy <= radius * radius
 }
+
 

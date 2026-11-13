@@ -44,6 +44,25 @@ pub fn prefers_chinese() -> bool {
     false
 }
 
+/// SAP GUI 的「窗口在任务栏中的分组」：`2` = 按系统标识和客户端。
+///
+/// 只有这一档才会把同系统同客户端的窗口合到一个按钮上；否则每个窗口一个按钮，
+/// 各自设图标没有意义。这个键本身也是 8.10 才有的，读不到就当作不支持。
+#[cfg(target_os = "windows")]
+pub fn taskbar_grouped_by_system() -> bool {
+    let Ok(key) = windows_registry::CURRENT_USER.open(r"Software\SAP\General\Appearance") else {
+        return false;
+    };
+    key.get_u32("TaskbarGrouping")
+        .map(|value| value == 2)
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn taskbar_grouped_by_system() -> bool {
+    false
+}
+
 /// SAP GUI 8.10 起才认识 `-uuid`，更早的版本会把它当普通参数忽略掉。
 pub fn supports_uuid_mode() -> bool {
     saplogon_version().is_some_and(|major| major >= 8100)
