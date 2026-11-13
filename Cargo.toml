@@ -1,6 +1,6 @@
 [package]
 name = "sap-auto-logon"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 description = "SAP Auto Logon"
 license = "MIT"
@@ -48,6 +48,8 @@ windows-sys = { version = "0.59", features = [
     "Win32_Graphics_Dwm",
     # CreateBitmap / DeleteObject：给 SAP 会话窗口画任务栏图标。
     "Win32_Graphics_Gdi",
+    # GetDpiForWindow：按窗口缩放比生成精确像素尺寸的任务栏图标。
+    "Win32_UI_HiDpi",
 ] }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]

@@ -11,12 +11,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM};
-use windows_sys::Win32::Graphics::Gdi::{
-    CreateBitmap, CreateDIBSection, CreateFontW, DeleteObject, DrawTextW, SelectObject,
-    SetBkMode, SetTextColor, ANTIALIASED_QUALITY, BITMAPINFO, BITMAPINFOHEADER, BI_RGB,
-    CLIP_DEFAULT_PRECIS, DEFAULT_CHARSET, DEFAULT_PITCH, DIB_RGB_COLORS, FF_DONTCARE,
-    OUT_TT_PRECIS, TRANSPARENT,
-};
+use windows_sys::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject};
+use windows_sys::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, EnumWindows, GetClassNameW, GetWindowTextW, SendMessageW, ICONINFO,
 };
@@ -26,8 +22,16 @@ const SESSION_CLASS: &str = "SAP_FRONTEND_SESSION";
 const WM_SETICON: u32 = 0x0080;
 const ICON_SMALL: usize = 0;
 const ICON_BIG: usize = 1;
-/// 图标画多大。任务栏按钮在小/中尺寸下都够用，系统再缩小也不会糊。
-const ICON_SIZE: u32 = 32;
+
+/// Windows 11 的任务栏图标在 100% 缩放下是 24px，125% 是 30px、150% 是 36px。
+///
+/// 尺寸给错会被系统缩放：Windows 找"不小于目标"的最近尺寸再缩小，给的图标比目标
+/// 还小就只能放大——那正是数字糊成一团的原因。所以按窗口 DPI 一像素不差地画。
+fn taskbar_icon_size(hwnd: HWND) -> u32 {
+    let dpi = unsafe { GetDpiForWindow(hwnd) };
+    let dpi = if dpi == 0 { 96 } else { dpi };
+    ((24 * dpi + 48) / 96).max(16)
+}
 
 /// SID → 颜色，与卡片上 SID 标签用的是同一套：
 /// 开发蓝、质量金、生产红、其余青。图标背景取这组饱和色，白字才压得住。
@@ -40,9 +44,10 @@ fn sid_color(sid: &str) -> (u8, u8, u8) {
     }
 }
 
-/// 已创建的图标句柄，按 `(系统标识, 客户端)` 缓存：重复创建会泄漏 GDI 对象，
-/// 而且任务栏在句柄换掉时会闪一下。
-static ICONS: Mutex<Option<HashMap<(String, String), isize>>> = Mutex::new(None);
+/// 已创建的图标句柄，按 `(系统标识, 客户端, 像素尺寸)` 缓存：重复创建会泄漏
+/// GDI 对象，而且任务栏在句柄换掉时会闪一下。尺寸要进 key：不同缩放的显示器
+/// 需要的图标大小不同。
+static ICONS: Mutex<Option<HashMap<(String, String, u32), isize>>> = Mutex::new(None);
 
 /// 扫一遍现有会话窗口，把缺图标的补上。启动时和每次登录后调用即可。
 pub fn apply_session_icons() {
@@ -65,19 +70,31 @@ pub fn apply_session_icons() {
     let icons = guard.get_or_insert_with(HashMap::new);
 
     for (hwnd, sid, client) in sessions {
-        let key = (sid, client);
-        let icon = match icons.get(&key) {
-            Some(icon) => *icon,
-            None => {
-                let icon = build_icon(&key.0, &key.1);
-                icons.insert(key.clone(), icon);
-                icon
-            }
-        };
-        // 小尺寸也用同一张：32px 缩到 16px 的观感比另画一版更好，代码也少一半。
+        let size = taskbar_icon_size(hwnd);
+        let small = icon_for(icons, &sid, &client, size);
+        // 大图标给 Alt+Tab、任务视图用，约等于 32px @100% 的等比版本。
+        let big = icon_for(icons, &sid, &client, (size * 4).div_ceil(3));
         unsafe {
-            SendMessageW(hwnd, WM_SETICON, ICON_BIG, icon as LPARAM);
-            SendMessageW(hwnd, WM_SETICON, ICON_SMALL, icon as LPARAM);
+            SendMessageW(hwnd, WM_SETICON, ICON_BIG, big as LPARAM);
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small as LPARAM);
+        }
+    }
+}
+
+/// 取缓存，没有就现画一张。
+fn icon_for(
+    icons: &mut HashMap<(String, String, u32), isize>,
+    sid: &str,
+    client: &str,
+    size: u32,
+) -> isize {
+    let key = (sid.to_string(), client.to_string(), size);
+    match icons.get(&key) {
+        Some(icon) => *icon,
+        None => {
+            let icon = build_icon(sid, client, size);
+            icons.insert(key, icon);
+            icon
         }
     }
 }
@@ -122,27 +139,23 @@ fn split_title(title: &str) -> Option<(String, String)> {
     Some((sid.to_string(), client))
 }
 
-/// `DS4(2)/100 传输组织器` → (`DS4`, `100`)。
-
-fn build_icon(sid: &str, client: &str) -> isize {
+fn build_icon(sid: &str, client: &str, size: u32) -> isize {
     let (r, g, b) = sid_color(sid);
-    // 圆角底色走像素绘制（抗锯齿），数字交给 GDI 用系统字体画——点阵字放大后太笨重。
-    let mut pixels = render_background(ICON_SIZE, (r, g, b));
-    unsafe {
-        draw_client_text(&mut pixels, ICON_SIZE, client);
-    }
+    // 圆角底色走像素绘制（抗锯齿），数字用点阵——小尺寸下的矢量字体笔画会糊。
+    let mut pixels = render_background(size, (r, g, b));
+    draw_digits(&mut pixels, size, client);
 
     unsafe {
         // 32bpp 的 DIB 位图，像素顺序是 BGRA（我们已经按这个顺序填好）。
         let color = CreateBitmap(
-            ICON_SIZE as i32,
-            ICON_SIZE as i32,
+            size as i32,
+            size as i32,
             1,
             32,
             pixels.as_ptr() as *const _,
         );
         // mask 全 0：透明度由 color 的 alpha 通道决定。
-        let mask = CreateBitmap(ICON_SIZE as i32, ICON_SIZE as i32, 1, 1, std::ptr::null());
+        let mask = CreateBitmap(size as i32, size as i32, 1, 1, std::ptr::null());
         let info = ICONINFO {
             fIcon: 1,
             xHotspot: 0,
@@ -196,89 +209,98 @@ fn render_background(size: u32, color: (u8, u8, u8)) -> Vec<u8> {
     pixels
 }
 
-/// 把客户端号用系统字体画进像素缓冲：GDI 写字比点阵干净，字号也能精确控制。
-unsafe fn draw_client_text(pixels: &mut [u8], size: u32, client: &str) {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, DeleteDC, GetDC, ReleaseDC,
+/// 三档点阵对应任务栏的三种图标尺寸（24 / 30 / 36px）：数字跟着图标一起变大，
+/// 而不是所有尺寸都用同一套小字。像素对齐、不做抗锯齿，边缘永远干净。
+const GLYPHS_SMALL: [&str; 10] = [
+    "011110110011110011110011110011110011110011110011110011110011110011011110",
+    "001100011100001100001100001100001100001100001100001100001100001100011110",
+    "011110110011000011000011000110000110001100011000110000110000110000111111",
+    "011110110011000011000011001110001110000011000011000011000011110011011110",
+    "000110001110010110100110110110110110111111000110000110000110000110000110",
+    "111111110000110000110000111110111110000011000011000011000011110011011110",
+    "001110011000110000110000111110110011110011110011110011110011110011011110",
+    "111111000011000011000110000110001100001100011000011000011000011000011000",
+    "011110110011110011110011011110011110110011110011110011110011110011011110",
+    "011110110011110011110011011111000011000011000011000011000011011110111100",
+];
+
+const GLYPHS_MEDIUM: [&str; 10] = [
+    "001111000111111011100111111001111110011111100111111001111110011111100111111001111110011111100111111001111110011111100111111001110111111000111100",
+    "000110000011100001111000000110000001100000011000000110000001100000011000000110000001100000011000000110000001100000011000000110000111111001111110",
+    "001111000111111011100111111001110000011100000111000011100001110000111000011100001110000011100000111000001110000011100000111000001111111111111111",
+    "001111000111111011100111000001110000011100001110001111000011110000001110000001110000011100000111000001111110011111100111111001110111111000111100",
+    "000011100001111000111110011101101110011011100110111001101110011011100110111111111111111100000110000001100000011000000110000001100000011000000110",
+    "111111111111111111100000111000001110000011111100111111100000011100000111000001110000011100000111000001111110011111100111111001110111111000111100",
+    "000111100011111001110000111000001110000011111100111111101110011111100111111001111110011111100111111001111110011111100111111001110111111000111100",
+    "111111111111111100000111000001110000111000001110000111000001110000111000001110000111000001110000011100000111000001110000011100000111000001110000",
+    "001111000111111011100111111001111110011111100111011111100011110001111110111001111110011111100111111001111110011111100111111001110111111000111100",
+    "001111000111111011100111111001111110011111100111111001110111111100111111000001110000011100000111000001110000111011111100111110000111000000110000",
+];
+
+/// 36px 档：10×20，数字再大一档。
+const GLYPHS_LARGE: [&str; 10] = [
+    "00111111000111111110111000011111100001111110000111111000011111100001111110000111111000011111100001111110000111111000011111100001111110000111111000011111100001111110000111111000011101111111100011111100",
+    "00001110000001111000001111100001101110000000111000000011100000001110000000111000000011100000001110000000111000000011100000001110000000111000000011100000001110000000111000000011100001111111100111111110",
+    "00111111000111111110111000011111100001110000000111000000011100000011100000011110000011110000011110000011110000011110000011110000001110000000111000000011100000001110000000111000000011111111111111111111",
+    "00111111000111111110111000011100000001110000000111000000111000011111000001111100000000111000000001110000000111000000011100000001110000000111111000011111100001111110000111111000011101111111100011111100",
+    "00000111000000111100000111110000111011000111001100111000110011100011001110001100111000110011100011001111111111111111111100000011000000001100000000110000000011000000001100000000110000000011000000001100",
+    "11111111111111111111111000000011100000001110000000111111110011111111100000000111000000011100000001110000000111000000011100000001110000000111111000011111100001111110000111111000011101111111100011111100",
+    "00011111000011111100011100000011100000001110000000111111110011111111101110000111111000011111100001111110000111111000011111100001111110000111111000011111100001111110000111111000011101111111100011111100",
+    "11111111111111111111000000011100000001110000001110000000111000000111000000011100000011100000001110000001110000000111000000111000000011100000001110000000111000000011100000001110000000111000000011100000",
+    "00111111000111111110111000011111100001111110000111111000011111100001110111111110001111110001111111101110000111111000011111100001111110000111111000011111100001111110000111111000011101111111100011111100",
+    "00111111000111111110111000011111100001111110000111111000011111100001111110000111011111111100111111110000000111000000011100000001110000000111000000011100000011101111111100111111100011111000001110000000",
+];
+
+/// 把客户端号画进像素缓冲。放不下就只留底色（至少还能按颜色认系统）。
+fn draw_digits(pixels: &mut [u8], size: u32, client: &str) {
+    // 三档点阵对应任务栏的三种图标尺寸：24px 用 6×12、30px 用 8×18、36px 用 10×20。
+    let (glyphs, width, height) = if size < 28 {
+        (&GLYPHS_SMALL, 6u32, 12u32)
+    } else if size < 34 {
+        (&GLYPHS_MEDIUM, 8u32, 18u32)
+    } else {
+        (&GLYPHS_LARGE, 10u32, 20u32)
     };
+    const GAP: u32 = 1;
 
-    let screen = GetDC(std::ptr::null_mut());
-    let memory = CreateCompatibleDC(screen);
-
-    let mut info: BITMAPINFO = std::mem::zeroed();
-    info.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
-    info.bmiHeader.biWidth = size as i32;
-    // 负高度 = 自上而下，像素顺序和我们的一致。
-    info.bmiHeader.biHeight = -(size as i32);
-    info.bmiHeader.biPlanes = 1;
-    info.bmiHeader.biBitCount = 32;
-    info.bmiHeader.biCompression = BI_RGB;
-    let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
-    let dib = CreateDIBSection(
-        memory,
-        &info,
-        DIB_RGB_COLORS,
-        &mut bits,
-        std::ptr::null_mut(),
-        0,
-    );
-    if dib.is_null() || bits.is_null() {
-        DeleteDC(memory);
-        ReleaseDC(std::ptr::null_mut(), screen);
+    let mut digits: Vec<usize> = client
+        .bytes()
+        .filter(|byte| byte.is_ascii_digit())
+        .map(|byte| (byte - b'0') as usize)
+        .collect();
+    digits.truncate(3);
+    if digits.is_empty() {
         return;
     }
 
-    std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits as *mut u8, pixels.len());
+    let total = digits.len() as u32 * width + (digits.len() as u32 - 1) * GAP;
+    if total > size || height > size {
+        return;
+    }
+    let origin_x = (size - total) / 2;
+    let origin_y = (size - height) / 2;
 
-    let old_bitmap = SelectObject(memory, dib as _);
-    let font_name: Vec<u16> = std::ffi::OsStr::new("Segoe UI")
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    // 18px 的粗体：三位数字在 32px 图标里占满中间，两边还留得下一点呼吸。
-    let font = CreateFontW(
-        -18,
-        0,
-        0,
-        0,
-        700,
-        0,
-        0,
-        0,
-        DEFAULT_CHARSET as u32,
-        OUT_TT_PRECIS as u32,
-        CLIP_DEFAULT_PRECIS as u32,
-        ANTIALIASED_QUALITY as u32,
-        DEFAULT_PITCH as u32 | FF_DONTCARE as u32,
-        font_name.as_ptr(),
-    );
-    let old_font = SelectObject(memory, font as _);
-
-    SetBkMode(memory, TRANSPARENT as i32);
-    SetTextColor(memory, 0x00FF_FFFF); // COLORREF 是 BGR
-
-    let text: Vec<u16> = client
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    let mut rect = windows_sys::Win32::Foundation::RECT {
-        left: 0,
-        top: 0,
-        right: size as i32,
-        bottom: size as i32,
-    };
-    // DT_CENTER | DT_VCENTER | DT_SINGLELINE
-    DrawTextW(memory, text.as_ptr(), -1, &mut rect, 0x0000_0001 | 0x0000_0004 | 0x0000_0020);
-
-    std::ptr::copy_nonoverlapping(bits as *const u8, pixels.as_mut_ptr(), pixels.len());
-
-    SelectObject(memory, old_font);
-    SelectObject(memory, old_bitmap);
-    DeleteObject(font as _);
-    DeleteObject(dib as _);
-    DeleteDC(memory);
-    ReleaseDC(std::ptr::null_mut(), screen);
+    for (position, digit) in digits.iter().enumerate() {
+        let glyph = glyphs[*digit].as_bytes();
+        let base_x = origin_x + position as u32 * (width + GAP);
+        for row in 0..height {
+            for column in 0..width {
+                if glyph[(row * width + column) as usize] != b'1' {
+                    continue;
+                }
+                let x = base_x + column;
+                let y = origin_y + row;
+                if x >= size || y >= size {
+                    continue;
+                }
+                let index = ((y * size + x) * 4) as usize;
+                pixels[index] = 255;
+                pixels[index + 1] = 255;
+                pixels[index + 2] = 255;
+                pixels[index + 3] = 255;
+            }
+        }
+    }
 }
 
 /// 圆角矩形的覆盖率，每像素 4×4 超采样，边缘就不会有硬锯齿。
@@ -308,5 +330,7 @@ fn inside_round_rect(x: f32, y: f32, size: f32, radius: f32) -> bool {
     let dy = y - cy;
     dx * dx + dy * dy <= radius * radius
 }
+
+
 
 
