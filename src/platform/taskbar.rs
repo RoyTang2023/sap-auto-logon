@@ -54,12 +54,15 @@ pub fn apply_session_icons() {
     // 只有 SAP GUI 8.10 且任务栏按「系统标识和客户端」分组时才值得动手：
     // 窗口本来不分组的话，每张图标都一样，画了也没意义。
     if !crate::platform::system::taskbar_grouped_by_system() {
-        log::debug!("任务栏图标跳过：SAP GUI 未按系统标识和客户端分组");
+        log::info!(
+            "任务栏图标跳过：SAP GUI 的「窗口在任务栏中的分组」不是「按系统标识和客户端」"
+        );
         return;
     }
 
     let sessions = collect_sessions();
     if sessions.is_empty() {
+        log::info!("任务栏图标跳过：没有找到 SAP 会话窗口");
         return;
     }
 
@@ -69,6 +72,7 @@ pub fn apply_session_icons() {
     };
     let icons = guard.get_or_insert_with(HashMap::new);
 
+    let total = sessions.len();
     for (hwnd, sid, client) in sessions {
         let size = taskbar_icon_size(hwnd);
         let small = icon_for(icons, &sid, &client, size);
@@ -79,6 +83,7 @@ pub fn apply_session_icons() {
             SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small as LPARAM);
         }
     }
+    log::info!("任务栏图标：已处理 {total} 个会话窗口");
 }
 
 /// 取缓存，没有就现画一张。

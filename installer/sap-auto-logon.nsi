@@ -83,6 +83,11 @@ Section "$(NAME_Main)" SecMain
   WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
+
+  ; 静默安装（应用内的自动更新走 /S）没有完成页，装完直接把新版本拉起来。
+  ; IfSilent 0 +2：静默时执行下一行，交互模式跳过它（交给完成页）。
+  IfSilent 0 +2
+    Exec '"$INSTDIR\${PRODUCT_EXE}"'
 SectionEnd
 
 Section /o "$(NAME_Desktop)" SecDesktop

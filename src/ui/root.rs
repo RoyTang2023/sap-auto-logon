@@ -103,6 +103,10 @@ pub struct RootView {
     username_input: Entity<InputState>,
     password_input: Entity<InputState>,
     remember: bool,
+    /// 已发现的新版本；`None` = 还没查过或已经是最新。
+    update_release: Option<crate::services::update::Release>,
+    /// 正在检查或下载，避免重复点击。
+    update_busy: bool,
 }
 
 impl RootView {
@@ -274,6 +278,8 @@ impl RootView {
             username_input: username_input.clone(),
             password_input: password_input.clone(),
             remember: true,
+            update_release: None,
+            update_busy: false,
         };
         view.reload(cx);
 
@@ -1131,6 +1137,32 @@ impl RootView {
                         })
                         .into_any_element(),
                 ))
+                .child(row(
+                    t!("app.check_update").to_string(),
+                    {
+                        let check_this = this.clone();
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(muted)
+                                    .child(format!("v{}", env!("CARGO_PKG_VERSION"))),
+                            )
+                            .child(
+                                Button::new("settings-check-update")
+                                    .label(t!("app.check_update").to_string())
+                                    .on_click(move |_, window, cx| {
+                                        check_this.update(cx, |view, cx| {
+                                            view.check_update(window, cx);
+                                        });
+                                    }),
+                            )
+                            .into_any_element()
+                    },
+                ))
                 .child(
                     div()
                         .text_size(px(11.))
@@ -1160,6 +1192,151 @@ impl RootView {
                         ),
                 )
         });
+    }
+
+    /// 检查更新：网络请求放后台，结果回到 UI 再决定弹什么。
+    fn check_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.update_busy {
+            return;
+        }
+        self.update_busy = true;
+        cx.notify();
+
+        let this = cx.entity().clone();
+        cx.spawn_in(window, async move |_weak, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { crate::services::update::check() })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.update_busy = false;
+                match result {
+                    Ok(Some(release)) => {
+                        view.update_release = Some(release);
+                        view.open_update_dialog(window, cx);
+                    }
+                    Ok(None) => view.toast(
+                        t!("app.update_latest").to_string(),
+                        NotificationType::Success,
+                        window,
+                        cx,
+                    ),
+                    Err(error) => view.show_error_dialog(
+                        t!("app.update_failed", error = error.to_string()).to_string(),
+                        window,
+                        cx,
+                    ),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn open_update_dialog(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(release) = self.update_release.clone() else {
+            return;
+        };
+        let this = cx.entity().clone();
+        window.open_dialog(cx, move |dialog, _window, cx| {
+            let muted = cx.theme().muted_foreground;
+            let install = this.clone();
+            let notes = if release.notes.is_empty() {
+                t!("app.update_no_notes").to_string()
+            } else {
+                release
+                    .notes
+                    .lines()
+                    .take(12)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            dialog
+                .title(
+                    t!("app.update_title", version = release.version.clone()).to_string(),
+                )
+                .w(px(460.))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .text_color(muted)
+                                .child(
+                                    t!(
+                                        "app.current_version",
+                                        version = env!("CARGO_PKG_VERSION")
+                                    )
+                                    .to_string(),
+                                ),
+                        )
+                        .child(div().text_size(px(12.)).child(notes)),
+                )
+                .footer(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap(px(8.))
+                        .child(
+                            Button::new("update-later")
+                                .label(t!("app.cancel").to_string())
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("update-install")
+                                .primary()
+                                .label(t!("app.update_install").to_string())
+                                .on_click(move |_, window, cx| {
+                                    window.close_dialog(cx);
+                                    install.update(cx, |view, cx| view.install_update(window, cx));
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// 下载并交给安装器。安装器会结束本进程，所以成功路径上直接退出。
+    fn install_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(release) = self.update_release.clone() else {
+            return;
+        };
+        if self.update_busy {
+            return;
+        }
+        self.update_busy = true;
+        self.toast(
+            t!("app.update_downloading").to_string(),
+            NotificationType::Info,
+            window,
+            cx,
+        );
+
+        let this = cx.entity().clone();
+        cx.spawn_in(window, async move |_weak, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { crate::services::update::download(&release) })
+                .await;
+            let _ = this.update_in(cx, |view, window, cx| {
+                view.update_busy = false;
+                match result.and_then(|path| crate::services::update::run_installer(&path)) {
+                    Ok(()) => {
+                        // 安装脚本会 taskkill 旧进程；主动退出让它安静地覆盖文件。
+                        log::info!("更新：已拉起安装器，退出当前进程");
+                        cx.quit();
+                    }
+                    Err(error) => view.show_error_dialog(
+                        t!("app.update_failed", error = error.to_string()).to_string(),
+                        window,
+                        cx,
+                    ),
+                }
+            });
+        })
+        .detach();
     }
 
     /// 按设置里的主题档套用；「跟随系统」读窗口外观。

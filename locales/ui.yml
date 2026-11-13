@@ -252,6 +252,30 @@ app:
   uuid_mode:
     en: "UUID mode"
     zh-CN: "UUID 模式"
+  check_update:
+    en: "Check for updates"
+    zh-CN: "检查更新"
+  update_title:
+    en: "Update available: %{version}"
+    zh-CN: "发现新版本 %{version}"
+  update_latest:
+    en: "You are on the latest version"
+    zh-CN: "已经是最新版本"
+  update_failed:
+    en: "Update failed: %{error}"
+    zh-CN: "更新失败：%{error}"
+  update_downloading:
+    en: "Downloading the installer…"
+    zh-CN: "正在下载安装包…"
+  update_install:
+    en: "Download and install"
+    zh-CN: "下载并安装"
+  update_no_notes:
+    en: "No release notes for this version."
+    zh-CN: "该版本没有更新说明。"
+  current_version:
+    en: "Current version: %{version}"
+    zh-CN: "当前版本：%{version}"
   landscape_path:
     en: "Landscape: %{path}"
     zh-CN: "Landscape：%{path}"
